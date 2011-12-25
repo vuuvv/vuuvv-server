@@ -1,0 +1,2 @@
+class PakeError(Exception):
+	pass
