@@ -6,12 +6,6 @@
 #define  V_DECLINED   -5
 #define  V_ABORT      -6
 
-/* Log levels */
-#define V_LOG_DEBUG     0
-#define V_LOG_INFO      1
-#define V_LOG_WARN      2
-#define V_LOG_ERROR     3
-
 #define LF     (u_char) 10
 #define CR     (u_char) 13
 #define CRLF   "\x0d\x0a"

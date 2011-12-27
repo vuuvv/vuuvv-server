@@ -13,10 +13,12 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <io.h>
+#include <time.h>
+#include <process.h>
 
+#include "log.h"
 #include "event_iocp.h"
 #include "eventloop.h"
 
-extern void v_log(int level, const char *fmt, ...);
 #endif /* PY__VUUVV_H */
 

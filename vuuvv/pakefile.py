@@ -15,6 +15,7 @@ include_dirs = ['.', sysconfig.get_python_inc()]
 headers = [
 	'vuuvv.h', 
 	'defines.h',
+	'log.h',
 	'eventloop.h', 
 	'event_iocp.h',
 	'os/win32/defines.h',
@@ -23,6 +24,7 @@ headers = [
 vuuvv_srcs = [
 	['vuuvv.c', headers],
 	['eventloop.c', headers],
+	['log.c', headers],
 	['event_iocp.c', headers],
 	['os/win32/errno.c', headers],
 ]

@@ -57,9 +57,8 @@ v_io_init(void)
 
 	res = WSAStartup(MAKEWORD(2, 2), &data);
 	if (res) {
-		PyErr_Format(PyExc_RuntimeError,
-				"WSAStartup() failed: %d\n", res);
-		return -1;
+		v_log_error(V_LOG_ERROR, v_errno, "WASStarup() failed: ");
+		return V_ERR;
 	}
 
 	if (iocp == NULL) {
@@ -67,8 +66,8 @@ v_io_init(void)
 	}
 
 	if (iocp == NULL) {
-		PyErr_Format(PyExc_RuntimeError, "CreateIoCompletionPort() failed");
-		return -1;
+		v_log_error(V_LOG_ERROR, v_errno, "CreateIoCompletionPort() failed: ");
+		return V_ERR;
 	}
 
 	dummy = v_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -79,14 +78,13 @@ v_io_init(void)
 				fn[i], sizeof(LPFN_ACCEPTEX),
 				&n, NULL, NULL);
 		if (res) {
-			PyErr_Format(PyExc_RuntimeError,
-					"io init failed: %d", res);
+			v_log_error(V_LOG_ERROR, v_errno, "WSAIoctl failed: ");
 			closesocket(dummy);
-			return -1;
+			return V_ERR;
 		}
 	}
 
 	closesocket(dummy);
 
-	return 0;
+	return V_OK;
 }
