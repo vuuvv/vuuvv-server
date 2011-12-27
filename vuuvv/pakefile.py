@@ -6,11 +6,25 @@ libraries = [
 	'gdi32', 'user32', 'kernel32', 'shell32', 'imm32', 'ws2_32',
 ]
 
+macros = [
+	('_CRT_SECURE_NO_WARNINGS', True),
+]
+
 include_dirs = ['.', sysconfig.get_python_inc()] 
 
+headers = [
+	'vuuvv.h', 
+	'defines.h',
+	'eventloop.h', 
+	'event_iocp.h',
+	'os/win32/defines.h',
+]
+
 vuuvv_srcs = [
-	['vuuvv.c', ['vuuvv.h']],
-	['eventloop.c', ['eventloop.h']],
+	['vuuvv.c', headers],
+	['eventloop.c', headers],
+	['event_iocp.c', headers],
+	['os/win32/errno.c', headers],
 ]
 vuuvv_objs = [rule.c(*file) for file in vuuvv_srcs]
 vuuvv_pyd = rule.pyd(vuuvv_objs, 'vuuvv')
