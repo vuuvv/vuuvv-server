@@ -1,11 +1,5 @@
 #include "vuuvv.h"
 
-typedef struct {
-	WSAOVERLAPPED   ovlp;
-	v_io_event_t    *event;
-	int             error;
-} v_event_ovlp_t;
-
 int
 v_eventloop_init()
 {

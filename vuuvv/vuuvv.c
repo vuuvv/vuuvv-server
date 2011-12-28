@@ -12,6 +12,7 @@ vuuvv_test(PyObject *self, PyObject *args, PyObject *kwds)
 	v_get_connection(v_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
 	printf("%d, %d\n", tp.tv_sec, tp.tv_usec);
 	v_io_init();
+	printf("Value of invalid handle: %d", sizeof(struct sockaddr));
 	Py_RETURN_NONE;
 }
 

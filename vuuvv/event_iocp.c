@@ -1,5 +1,11 @@
 #include "vuuvv.h"
 
+typedef struct {
+	WSAOVERLAPPED   ovlp;
+	v_io_event_t    *event;
+	int             error;
+} v_event_ovlp_t;
+
 static int v_io_accept(v_io_event_t *ev);
 static int v_io_connect(v_io_event_t *ev);
 static int v_io_read(v_io_event_t *ev);
@@ -130,6 +136,24 @@ static int
 v_io_accept(v_io_event_t *ev)
 {
 	v_socket_t      fd;
+	v_listening_t   *ls;
+	v_connection_t  *c;
+	size_t          len;
+
+	ls = ev->data;
+	fd = v_socket(ls->sockaddr->sa_family, ls->type, 0);
+
+	if (fd == INVALID_SOCKET) {
+		v_log(V_LOG_ERROR, v_errno, v_socket_name " failed: ");
+		return V_ERR;
+	}
+
+	c = v_get_connection(fd);
+
+	if (c == NULL) {
+		return V_ERR;
+	}
+
 
 	return V_OK;
 }

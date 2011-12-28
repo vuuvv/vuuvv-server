@@ -8,6 +8,7 @@
 #define V_IOLOOP_EXIT       0x80
 
 typedef struct v_eventloop_s v_eventloop_t;
+typedef struct v_connection_s v_connection_t;
 
 typedef void v_io_proc(v_eventloop_t *loop, int fd, void *data, int flags);
 typedef int v_time_proc(v_eventloop_t *loop, long long id, void *data);
@@ -44,13 +45,15 @@ typedef struct v_listening_s {
 
 	v_connection_t          *connection;
 	v_io_event_t            *event;
+	char                    *buffer;
 } v_listening_t;
 
-typedef struct v_connection_s{
+struct v_connection_s{
 	v_socket_t              fd;
 	v_io_event_t            *event;
+	v_listening_t           *listening;
 	void                    *data;
-} v_connection_t;
+};
 
 extern int v_eventloop_init();
 extern v_connection_t * v_get_connection(v_socket_t fd);
