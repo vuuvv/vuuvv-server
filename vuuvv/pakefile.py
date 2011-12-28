@@ -16,6 +16,7 @@ headers = [
 	'vuuvv.h', 
 	'defines.h',
 	'log.h',
+	'config.h',
 	'eventloop.h', 
 	'event_iocp.h',
 	'os/win32/defines.h',
@@ -25,6 +26,7 @@ vuuvv_srcs = [
 	['vuuvv.c', headers],
 	['eventloop.c', headers],
 	['log.c', headers],
+	['config.c', headers],
 	['event_iocp.c', headers],
 	['os/win32/errno.c', headers],
 ]

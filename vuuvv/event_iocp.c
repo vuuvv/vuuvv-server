@@ -1,5 +1,9 @@
 #include "vuuvv.h"
 
+static int v_io_accept(v_io_event_t *ev);
+static int v_io_connect(v_io_event_t *ev);
+static int v_io_read(v_io_event_t *ev);
+static int v_io_write(v_io_event_t *ev);
 /*
  * function: poll, get the event to handle.
  * function: add_event, add a event to be polled.
@@ -88,3 +92,63 @@ v_io_init(void)
 
 	return V_OK;
 }
+
+int
+v_io_poll()
+{
+}
+
+int
+v_io_add(v_io_event_t *ev, int event, int key)
+{
+	v_connection_t *c = ev->data;
+
+	if (CreateIoCompletionPort((HANDLE) c->fd, iocp, key, 0) == NULL) {
+		v_log_error(V_LOG_ERROR, v_errno,
+				"CreateIoCompletionPort() failed: ");
+		return V_ERR;
+	}
+
+	switch(event) {
+		case V_IO_ACCEPT:
+			return v_io_accept(ev);
+		case V_IO_CONNECT:
+			return v_io_connect(ev);
+		case V_IO_READ:
+			return v_io_read(ev);
+		case V_IO_WRITE:
+			return v_io_write(ev);
+		default:
+			v_log(V_LOG_ERROR, "Use the unknown event type: %d", event);
+			return V_ERR;
+	}
+
+	return V_OK;
+}
+
+static int
+v_io_accept(v_io_event_t *ev)
+{
+	v_socket_t      fd;
+
+	return V_OK;
+}
+
+static int
+v_io_connect(v_io_event_t *ev)
+{
+	return V_OK;
+}
+
+static int
+v_io_read(v_io_event_t *ev)
+{
+	return V_OK;
+}
+
+static int
+v_io_write(v_io_event_t *ev)
+{
+	return V_OK;
+}
+

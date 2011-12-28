@@ -16,3 +16,7 @@
 #define v_max(val1, val2)  ((val1 < val2) ? (val2) : (val1))
 #define v_min(val1, val2)  ((val1 > val2) ? (val2) : (val1))
 
+#define v_malloc        PyMem_Malloc
+#define v_new           PyMem_New
+#define v_free          PyMem_Free
+#define v_realloc       PyMem_Realloc

@@ -8,6 +8,8 @@ vuuvv_test(PyObject *self, PyObject *args, PyObject *kwds)
 {
 	_PyTime_timeval tp;
 	_PyTime_gettimeofday(&tp);
+	v_eventloop_init();
+	v_get_connection(v_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
 	printf("%d, %d\n", tp.tv_sec, tp.tv_usec);
 	v_io_init();
 	Py_RETURN_NONE;

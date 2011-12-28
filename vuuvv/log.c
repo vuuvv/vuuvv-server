@@ -1,15 +1,5 @@
 #include "vuuvv.h"
 
-typedef struct _v_config_s {
-	int         verbosity;
-	char        *logfile;
-} v_config_s;
-
-static v_config_s config = {
-	V_LOG_DEBUG,
-	NULL
-};
-
 void
 v_log(int level, const char *fmt, ...)
 {
@@ -19,13 +9,13 @@ v_log(int level, const char *fmt, ...)
 	FILE            *fp;
 	char            buf[64];
 	char            msg[V_MAX_LOGMSG_LEN];
-	char            *logfile = config.logfile;
+	char            *logfile = v_config.logfile;
 
-	if (level < config.verbosity) return;
+	if (level < v_config.verbosity) return;
 
 	fp = (logfile == NULL) ? stdout : fopen(logfile, "a");
 	if (!fp) {
-		config.logfile = NULL;
+		v_config.logfile = NULL;
 		v_log(V_LOG_WARN, "Open log file '%s' failed: %s", 
 			logfile, v_strerror(v_errno, msg, V_MAX_LOGMSG_LEN));
 		return;
@@ -51,14 +41,14 @@ v_log_error(int level, v_err_t err, const char *fmt, ...)
 	FILE            *fp;
 	char            buf[64];
 	char            msg[V_MAX_LOGMSG_LEN];
-	char            *logfile = config.logfile;
+	char            *logfile = v_config.logfile;
 	int             size;
 
-	if (level < config.verbosity) return;
+	if (level < v_config.verbosity) return;
 
 	fp = (logfile == NULL) ? stdout : fopen(logfile, "a");
 	if (!fp) {
-		config.logfile = NULL;
+		v_config.logfile = NULL;
 		v_log(V_LOG_WARN, "Open log file '%s' failed: %s", 
 			logfile, v_strerror(v_errno, msg, V_MAX_LOGMSG_LEN));
 		return;
