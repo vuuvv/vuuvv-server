@@ -22,3 +22,6 @@
 #define v_realloc       PyMem_Realloc
 
 #define v_inline        Py_LOCAL_INLINE
+
+#define v_ssize_t       Py_ssize_t
+#define V_SSIZE_T_MAX   PY_SSIZE_T_MAX

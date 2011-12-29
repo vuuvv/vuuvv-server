@@ -5,10 +5,10 @@ static int v_io_connect(v_io_event_t *ev);
 static int v_io_read(v_io_event_t *ev);
 static int v_io_write(v_io_event_t *ev);
 
-static int handle_accept(v_io_event_t *ev);
-static int handle_connect(v_io_event_t *ev);
-static int handle_read(v_io_event_t *ev);
-static int handle_write(v_io_event_t *ev);
+static void handle_accept(v_io_event_t *ev);
+static void handle_connect(v_io_event_t *ev);
+static void handle_read(v_io_event_t *ev);
+static void handle_write(v_io_event_t *ev);
 
 static void v_close_prepare_connection(v_connection_t *c);
 /*
@@ -130,19 +130,19 @@ v_io_poll()
 	res = GetQueuedCompletionStatus(iocp, &n, (PULONG_PTR)&ev, &ovlp, 50);
 
 	if (res) {
-		v_log(V_LOG_INFO, "Get Event %d", ev->type);
+		v_log(V_LOG_DEBUG, "Get Event %d, %d bytes", ev->type, n);
 		switch (ev->type) {
 			case V_IO_ACCEPT:
-				res = handle_accept(ev);
+				handle_accept(ev);
 				break;
 			case V_IO_CONNECT:
-				res = handle_connect(ev);
+				handle_connect(ev);
 				break;
 			case V_IO_READ:
-				res = handle_read(ev);
+				handle_read(ev);
 				break;
 			case V_IO_WRITE:
-				res = handle_write(ev);
+				handle_write(ev);
 				break;
 		}
 	}
@@ -224,7 +224,7 @@ v_io_accept(v_io_event_t *ev)
 	return V_OK;
 }
 
-void
+static void
 handle_accept(v_io_event_t *ev)
 {
 	v_listening_t       *ls;
@@ -255,22 +255,48 @@ v_io_connect(v_io_event_t *ev)
 	return V_OK;
 }
 
-static int
+static void
 handle_connect(v_io_event_t *ev)
 {
-	return V_OK;
 }
 
 static int
 v_io_read(v_io_event_t *ev)
 {
-	return V_OK;
+	int                 err, res, n, flags = 0;
+	v_connection_t      *c;
+	WSABUF              wbuf;
+
+	c = ev->data;
+	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
+	wbuf.buf = NULL;
+	wbuf.len = 0;
+
+	res = WSARecv(ev->fd, &wbuf, 1, &n, &flags, (LPOVERLAPPED)&ev->ovlp, NULL);
+
+	if (res == 0)
+		return V_OK;
+
+	err = v_errno;
+	if (err == ERROR_IO_PENDING)
+		return V_OK;
+
+	v_log_error(V_LOG_ALERT, err, "WSARecv failed: ");
+	return V_ERR;
 }
 
-static int
+static void
 handle_read(v_io_event_t *ev)
 {
-	return V_OK;
+	int         n;
+	char        *buf;
+	ioctlsocket(ev->fd, FIONREAD, &n);
+	buf = v_malloc(n + 1);
+	recv(ev->fd, buf, n, 0);
+	buf[n] = '\0';
+	v_log(V_LOG_DEBUG, "Read '%s'", buf);
+	ev->handler(ev);
+	v_io_read(ev);
 }
 
 static int
@@ -279,10 +305,9 @@ v_io_write(v_io_event_t *ev)
 	return V_OK;
 }
 
-static int
+static void
 handle_write(v_io_event_t *ev)
 {
-	return V_OK;
 }
 
 static void

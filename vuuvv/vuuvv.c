@@ -4,12 +4,17 @@ PyDoc_STRVAR(vuuvv_doc,
 "Python vuuvv module");
 
 static int
+test_read(v_io_event_t *ev)
+{
+	printf("test_read\n");
+	return V_OK;
+}
+
+static int
 test(v_io_event_t *ev)
 {
 	v_connection_t *c = ev->data;
-	printf("test\n");
-	v_log(V_LOG_INFO, "OK: %d\n", ntohs(c->remote_addr->sin_port));
-	printf("test\n");
+	v_io_add(ev, V_IO_READ, test_read);
 	return V_OK;
 }
 
