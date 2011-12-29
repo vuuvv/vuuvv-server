@@ -9,6 +9,9 @@ typedef SOCKET v_socket_t;
 
 #define v_socket_name       "WSASocket()"
 
+#define v_close_socket      closesocket
+#define v_close_socket_name "closesocket()"
+
 #define v_getpid        _getpid
 #define v_memzero       ZeroMemory
 

@@ -16,7 +16,7 @@ v_log(int level, const char *fmt, ...)
 	fp = (logfile == NULL) ? stdout : fopen(logfile, "a");
 	if (!fp) {
 		v_config.logfile = NULL;
-		v_log(V_LOG_WARN, "Open log file '%s' failed: %s", 
+		v_log(V_LOG_ALERT, "Open log file '%s' failed: %s", 
 			logfile, v_strerror(v_errno, msg, V_MAX_LOGMSG_LEN));
 		return;
 	}
@@ -49,7 +49,7 @@ v_log_error(int level, v_err_t err, const char *fmt, ...)
 	fp = (logfile == NULL) ? stdout : fopen(logfile, "a");
 	if (!fp) {
 		v_config.logfile = NULL;
-		v_log(V_LOG_WARN, "Open log file '%s' failed: %s", 
+		v_log(V_LOG_ALERT, "Open log file '%s' failed: %s", 
 			logfile, v_strerror(v_errno, msg, V_MAX_LOGMSG_LEN));
 		return;
 	}

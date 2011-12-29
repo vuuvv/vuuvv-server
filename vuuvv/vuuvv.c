@@ -3,16 +3,31 @@
 PyDoc_STRVAR(vuuvv_doc,
 "Python vuuvv module");
 
+static int
+test(v_io_event_t *ev)
+{
+	v_connection_t *c = ev->data;
+	printf("test\n");
+	v_log(V_LOG_INFO, "OK: %d\n", ntohs(c->remote_addr->sin_port));
+	printf("test\n");
+	return V_OK;
+}
+
 static PyObject *
 vuuvv_test(PyObject *self, PyObject *args, PyObject *kwds)
 {
 	_PyTime_timeval tp;
+	v_listening_t *ls;
 	_PyTime_gettimeofday(&tp);
 	v_eventloop_init();
 	v_get_connection(v_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
 	printf("%d, %d\n", tp.tv_sec, tp.tv_usec);
 	v_io_init();
-	printf("Value of invalid handle: %d", sizeof(struct sockaddr));
+	ls = v_create_listening(NULL, 9999, 0);
+	v_io_add(ls->event, V_IO_ACCEPT, test);
+	while(1) {
+		v_io_poll();
+	}
 	Py_RETURN_NONE;
 }
 

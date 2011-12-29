@@ -1,15 +1,16 @@
 #include "vuuvv.h"
 
-typedef struct {
-	WSAOVERLAPPED   ovlp;
-	v_io_event_t    *event;
-	int             error;
-} v_event_ovlp_t;
-
 static int v_io_accept(v_io_event_t *ev);
 static int v_io_connect(v_io_event_t *ev);
 static int v_io_read(v_io_event_t *ev);
 static int v_io_write(v_io_event_t *ev);
+
+static int handle_accept(v_io_event_t *ev);
+static int handle_connect(v_io_event_t *ev);
+static int handle_read(v_io_event_t *ev);
+static int handle_write(v_io_event_t *ev);
+
+static void v_close_prepare_connection(v_connection_t *c);
 /*
  * function: poll, get the event to handle.
  * function: add_event, add a event to be polled.
@@ -17,6 +18,26 @@ static int v_io_write(v_io_event_t *ev);
  */
 
 static HANDLE iocp;
+
+v_inline(int)
+v_prepare_ev(v_io_event_t *ev)
+{
+	if (!ev->ready && CreateIoCompletionPort((HANDLE) ev->fd, iocp, (ULONG_PTR)ev, 0) == NULL) {
+		v_log_error(V_LOG_ERROR, v_errno,
+				"CreateIoCompletionPort() failed: ");
+		return V_ERR;
+	}
+	ev->ready = 1;
+	return V_OK;
+}
+
+v_inline(void)
+v_shutdown_socket(fd)
+{
+	if (v_close_socket((fd)) == INVALID_SOCKET) {
+		v_log_error(V_LOG_ERROR, v_socket_errno, v_close_socket_name " failed: ");
+	}      
+}
 
 #define LPFN_COUNT 6
 static LPFN_ACCEPTEX              v_acceptex;
@@ -67,7 +88,7 @@ v_io_init(void)
 
 	res = WSAStartup(MAKEWORD(2, 2), &data);
 	if (res) {
-		v_log_error(V_LOG_ERROR, v_errno, "WASStarup() failed: ");
+		v_log_error(V_LOG_ERROR, v_socket_errno, "WASStarup() failed: ");
 		return V_ERR;
 	}
 
@@ -88,7 +109,7 @@ v_io_init(void)
 				fn[i], sizeof(LPFN_ACCEPTEX),
 				&n, NULL, NULL);
 		if (res) {
-			v_log_error(V_LOG_ERROR, v_errno, "WSAIoctl failed: ");
+			v_log_error(V_LOG_ERROR, v_socket_errno, "WSAIoctl failed: ");
 			closesocket(dummy);
 			return V_ERR;
 		}
@@ -102,18 +123,41 @@ v_io_init(void)
 int
 v_io_poll()
 {
+	int             res, n;
+	v_io_event_t    *ev;
+	OVERLAPPED      *ovlp;
+
+	res = GetQueuedCompletionStatus(iocp, &n, (PULONG_PTR)&ev, &ovlp, 50);
+
+	if (res) {
+		v_log(V_LOG_INFO, "Get Event %d", ev->type);
+		switch (ev->type) {
+			case V_IO_ACCEPT:
+				res = handle_accept(ev);
+				break;
+			case V_IO_CONNECT:
+				res = handle_connect(ev);
+				break;
+			case V_IO_READ:
+				res = handle_read(ev);
+				break;
+			case V_IO_WRITE:
+				res = handle_write(ev);
+				break;
+		}
+	}
+
+	return res;
 }
 
 int
-v_io_add(v_io_event_t *ev, int event, int key)
+v_io_add(v_io_event_t *ev, int event, v_io_proc handler)
 {
-	v_connection_t *c = ev->data;
-
-	if (CreateIoCompletionPort((HANDLE) c->fd, iocp, key, 0) == NULL) {
-		v_log_error(V_LOG_ERROR, v_errno,
-				"CreateIoCompletionPort() failed: ");
+	if (v_prepare_ev(ev) == V_ERR) {
 		return V_ERR;
 	}
+	ev->type = event;
+	ev->handler = handler;
 
 	switch(event) {
 		case V_IO_ACCEPT:
@@ -138,28 +182,81 @@ v_io_accept(v_io_event_t *ev)
 	v_socket_t      fd;
 	v_listening_t   *ls;
 	v_connection_t  *c;
-	size_t          len;
+	size_t          n;
+	int             err;
 
 	ls = ev->data;
-	fd = v_socket(ls->sockaddr->sa_family, ls->type, 0);
 
+	fd = v_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (fd == INVALID_SOCKET) {
-		v_log(V_LOG_ERROR, v_errno, v_socket_name " failed: ");
+		v_log_error(V_LOG_ALERT, v_socket_errno, v_socket_name " failed: ");
+		return V_ERR;
+	}
+
+	ls->buffer = v_malloc(2 * sizeof(struct sockaddr) + 16);
+	if (ls->buffer == NULL) {
+		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
 		return V_ERR;
 	}
 
 	c = v_get_connection(fd);
-
 	if (c == NULL) {
+		v_shutdown_socket(fd);
 		return V_ERR;
 	}
 
+	ls->connection = c;
+	c->listening = ls;
+
+	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
+
+	if (v_acceptex(ev->fd, fd, ls->buffer, 0, 
+			sizeof(struct sockaddr) + 16, sizeof(struct sockaddr) + 16,
+			&n, (LPOVERLAPPED)&ev->ovlp) == 0) {
+		err = v_socket_errno;
+		if (err != WSA_IO_PENDING) {
+			v_log_error(V_LOG_ALERT, err, "AcceptEx() failed: ");
+			v_close_prepare_connection(c);
+			return V_ERR;
+		}
+	}
 
 	return V_OK;
 }
 
+void
+handle_accept(v_io_event_t *ev)
+{
+	v_listening_t       *ls;
+	v_connection_t      *c;
+	int                 ln, rn;
+
+	ls = ev->data;
+	c = ls->connection;
+
+	if (setsockopt(c->event->fd, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
+				(char *) &ls->event->fd, sizeof(v_socket_t)) == INVALID_SOCKET) {
+		v_log_error(V_LOG_ALERT, v_socket_errno, "setsocketopt(SO_UPDATE_ACCEPT_CONTEXT) failed: ");
+	}
+
+	v_getacceptexsockaddrs(ls->buffer, 0,
+			sizeof(struct sockaddr) + 16, sizeof(struct sockaddr) + 16,
+			(LPSOCKADDR *)&c->remote_addr, &rn,
+			(LPSOCKADDR *)&c->local_addr, &ln);
+
+	v_io_accept(ev);
+
+	ev->handler(c->event);
+}
+
 static int
 v_io_connect(v_io_event_t *ev)
+{
+	return V_OK;
+}
+
+static int
+handle_connect(v_io_event_t *ev)
 {
 	return V_OK;
 }
@@ -171,8 +268,35 @@ v_io_read(v_io_event_t *ev)
 }
 
 static int
+handle_read(v_io_event_t *ev)
+{
+	return V_OK;
+}
+
+static int
 v_io_write(v_io_event_t *ev)
 {
 	return V_OK;
 }
 
+static int
+handle_write(v_io_event_t *ev)
+{
+	return V_OK;
+}
+
+static void
+v_close_prepare_connection(v_connection_t *c)
+{
+	v_socket_t  fd;
+
+	v_free_connection(c);
+
+	fd = c->event->fd;
+	c->event->fd = (v_socket_t) -1;
+
+	if (v_close_socket(fd) == -1) {
+		v_log_error(V_LOG_ERROR, v_socket_errno,
+				v_close_socket_name " failed: ");
+	}
+}

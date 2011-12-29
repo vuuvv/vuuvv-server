@@ -7,35 +7,43 @@
 #define V_IO_ERROR          0x40
 #define V_IOLOOP_EXIT       0x80
 
+typedef struct v_io_event_s v_io_event_t;
+typedef struct v_time_event_s v_time_event_t;
 typedef struct v_eventloop_s v_eventloop_t;
 typedef struct v_connection_s v_connection_t;
 
-typedef void v_io_proc(v_eventloop_t *loop, int fd, void *data, int flags);
-typedef int v_time_proc(v_eventloop_t *loop, long long id, void *data);
+typedef int (* v_io_proc)(v_io_event_t *ev);
+typedef int (* v_time_proc)(v_time_event_t *ev);
 
 typedef struct v_io_event_s {
+	v_socket_t              fd;
 	void                    *data;
 	int                     type;
-	v_io_proc               *handler;
-} v_io_event_t;
+	v_io_proc               handler;
+	unsigned                ready:1;
+	unsigned                closed:1;
+#ifdef WIN32
+	OVERLAPPED              ovlp;
+#endif
+};
 
 typedef struct v_time_event_s {
 	long long               id;
 	long                    sec;
 	long                    ms;
-	v_time_proc             *handler;
+	v_time_proc             handler;
 	void                    *data;
 	struct v_time_event_s   *next;
-} v_time_event_t;
+};
 
 typedef struct v_eventloop_s {
 	v_time_event_t          *time_event_head;
 } v_eventloop_t;
 
 typedef struct v_listening_s {
-	v_socket_t              fd;
+	v_io_event_t            *event;
 
-	struct sockaddr         *sockaddr;
+	struct sockaddr_in      *sockaddr;
 	size_t                  socklen;
 	size_t                  addr_text_max_len;
 	char                    *addr_text;
@@ -44,16 +52,19 @@ typedef struct v_listening_s {
 	int                     backlog;
 
 	v_connection_t          *connection;
-	v_io_event_t            *event;
 	char                    *buffer;
 } v_listening_t;
 
 struct v_connection_s{
-	v_socket_t              fd;
 	v_io_event_t            *event;
+
 	v_listening_t           *listening;
+	struct sockaddr_in      *remote_addr;
+	struct sockaddr_in      *local_addr;
 	void                    *data;
 };
 
 extern int v_eventloop_init();
+extern v_listening_t * v_create_listening(const char *hostname, int port, int backlog);
 extern v_connection_t * v_get_connection(v_socket_t fd);
+extern void v_free_connection(v_connection_t *c);

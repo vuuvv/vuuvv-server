@@ -20,3 +20,5 @@
 #define v_new           PyMem_New
 #define v_free          PyMem_Free
 #define v_realloc       PyMem_Realloc
+
+#define v_inline        Py_LOCAL_INLINE
