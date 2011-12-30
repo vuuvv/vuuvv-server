@@ -1,11 +1,30 @@
-#define V_IO_ACCEPT         0x01
-#define V_IO_READ           0x02
-#define V_IO_WRITE          0x04
-#define V_IO_CONNECT        0x08
-#define V_IO_CLOSE          0x10
-#define V_IO_CLOSED         0x20
-#define V_IO_ERROR          0x40
-#define V_IOLOOP_EXIT       0x80
+#define V_IO_NONE               0x01
+#define V_IO_ACCEPT             0x02
+#define V_IO_READ               0x04
+#define V_IO_WRITE              0x08
+#define V_IO_CONNECT            0x10
+#define V_IO_CLOSE              0x20
+#define V_IO_SHUTDOWN           0x40
+
+/*
+#define V_IO_STATUS_NONE        0x00
+#define V_IO_STATUS_USABLE      0x01
+#define V_IO_STATUS_READY       0x02
+#define V_IO_STATUS_STANDBY     0x04
+#define V_IO_STATUS_CLOSING     0x08
+#define V_IO_STATUS_CLOSED      0x10
+#define V_IO_STATUS_ERROR       0x20
+*/
+enum V_IO_STATUS {
+	V_IO_STATUS_NONE,
+	V_IO_STATUS_USABLE,
+	V_IO_STATUS_READY,
+	V_IO_STATUS_STANDBY,
+	V_IO_STATUS_CLOSING,
+	V_IO_STATUS_CLOSED,
+	V_IO_STATUS_ERROR,
+};
+
 
 typedef struct v_io_event_s v_io_event_t;
 typedef struct v_time_event_s v_time_event_t;
@@ -18,10 +37,9 @@ typedef int (* v_time_proc)(v_time_event_t *ev);
 typedef struct v_io_event_s {
 	v_socket_t              fd;
 	void                    *data;
-	int                     type;
+	unsigned short          type;
+	unsigned short          status;
 	v_io_proc               handler;
-	unsigned                ready:1;
-	unsigned                closed:1;
 #ifdef WIN32
 	OVERLAPPED              ovlp;
 #endif
@@ -58,13 +76,14 @@ typedef struct v_listening_s {
 struct v_connection_s{
 	v_io_event_t            *event;
 
-	v_listening_t           *listening;
 	struct sockaddr_in      *remote_addr;
 	struct sockaddr_in      *local_addr;
 	void                    *data;
 };
 
 extern int v_eventloop_init();
-extern v_listening_t * v_create_listening(const char *hostname, int port, int backlog);
-extern v_connection_t * v_get_connection(v_socket_t fd);
+extern v_listening_t *v_create_listening(const char *hostname, int port, int backlog);
+extern v_connection_t *v_get_connection();
 extern void v_free_connection(v_connection_t *c);
+extern int v_connect(const char *hostname, int port, v_io_proc handler);
+

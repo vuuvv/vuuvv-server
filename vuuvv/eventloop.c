@@ -29,10 +29,10 @@ v_eventloop_init()
 	}
 
 	for (i = 0; i < connections_count; i++) {
-		ev[i].type = V_IO_ERROR;
-		ev[i].ready = 0;
-		ev[i].closed = 1;
+		ev[i].type = V_IO_NONE;
+		ev[i].status = V_IO_STATUS_NONE;
 		ev[i].fd = (v_socket_t) -1;
+		ev[i].data = c;
 	}
 
 	i = connections_count;
@@ -121,15 +121,35 @@ v_create_listening(const char *hostname, int port, int backlog)
 		return NULL;
 	}
 
-	ev->type = V_IO_ERROR;
-	ev->ready = 0;
-	ev->closed = 1;
+	ev->type = V_IO_NONE;
+	ev->status = V_IO_STATUS_USABLE;
 
 	return ls;
 }
 
+int
+v_connect(const char *hostname, int port, v_io_proc handler)
+{
+	v_connection_t      *c;
+	struct sockaddr_in  *remote_addr;
+
+	remote_addr = v_malloc(sizeof(struct sockaddr_in));
+	remote_addr.sin_family = AF_INET;
+	remote_addr.sin_port = htons(port);
+	if ((remote_addr.sin_addr.s_addr = inet_addr(hostname)) == INADDR_NONE) {
+		v_log(V_LOG_ALERT, "Host address invalid %s", hostname);
+		v_free(remote_addr);
+		return V_ERR;
+	}
+
+	c = v_get_connection();
+	c->ev->remote_addr = remote_addr;
+
+	return v_io_add(c->ev, V_IO_CONNECT, handler);
+}
+
 v_connection_t *
-v_get_connection(v_socket_t fd)
+v_get_connection()
 {
 	v_connection_t      *c;
 
@@ -144,8 +164,7 @@ v_get_connection(v_socket_t fd)
 	v_config.free_connections = c->data;
 	v_config.free_connections_count--;
 
-	c->event->fd = fd;
-
+	v_io_prepare(c->event);
 	c->event->data = c;
 
 	return c;
@@ -159,4 +178,6 @@ v_free_connection(v_connection_t *c)
 	v_config.free_connections_count++;
 	v_free(c->local_addr);
 	v_free(c->remote_addr);
+	c->local_addr = NULL;
+	c->remote_addr = NULL;
 }

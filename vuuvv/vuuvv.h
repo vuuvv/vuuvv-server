@@ -16,8 +16,8 @@
 #include <time.h>
 #include <process.h>
 
-#include "stream.h"
 #include "eventloop.h"
+#include "stream.h"
 #include "config.h"
 #include "log.h"
 #include "event_iocp.h"

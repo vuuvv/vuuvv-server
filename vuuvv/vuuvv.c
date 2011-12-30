@@ -6,15 +6,34 @@ PyDoc_STRVAR(vuuvv_doc,
 static int
 test_read(v_io_event_t *ev)
 {
-	printf("test_read\n");
+	int n;
+	char *buf;
+	v_socket_t fd;
+
+	fd = ev->fd;
+	ioctlsocket(fd, FIONREAD, &n);
+	buf = v_malloc(n + 1);
+	recv(fd, buf, n, 0);
+	buf[n] = '\0';
+
+	printf("test_read: %s\n", buf);
+	v_free(buf);
 	return V_OK;
 }
 
 static int
-test(v_io_event_t *ev)
+test_close(v_io_event_t *ev)
 {
-	v_connection_t *c = ev->data;
-	v_io_add(ev, V_IO_READ, test_read);
+	printf("connection %d closed\n", ev->fd);
+	return V_OK;
+}
+
+static int
+test(v_io_event_t *lev)
+{
+	v_listening_t *ls = lev->data;
+	v_connection_t *c = ls->connection;
+	v_io_add(c->event, V_IO_CLOSE, test_close);
 	return V_OK;
 }
 
@@ -25,9 +44,8 @@ vuuvv_test(PyObject *self, PyObject *args, PyObject *kwds)
 	v_listening_t *ls;
 	_PyTime_gettimeofday(&tp);
 	v_eventloop_init();
-	v_get_connection(v_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
-	printf("%d, %d\n", tp.tv_sec, tp.tv_usec);
 	v_io_init();
+	printf("%d, %d\n", tp.tv_sec, tp.tv_usec);
 	ls = v_create_listening(NULL, 9999, 0);
 	v_io_add(ls->event, V_IO_ACCEPT, test);
 	while(1) {

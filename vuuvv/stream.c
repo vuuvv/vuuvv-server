@@ -1,13 +1,13 @@
 #include "vuuvv.h"
 
 v_inline(int)
-_length(v_stream_t stream)
+_length(v_stream_t *stream)
 {
 	return stream->pos - stream->head;
 }
 
 v_inline(int)
-_space(v_stream_t stream)
+_space(v_stream_t *stream)
 {
 	return stream->alloc - stream->pos;
 }
@@ -63,15 +63,15 @@ v_stream_reset(v_stream_t *stream)
 }
 
 int
-v_stream_write(v_stream_t stream, const char *byte, v_ssize_t len)
+v_stream_write(v_stream_t *stream, const char *bytes, v_ssize_t len)
 {
-	if (len > V_STREAM_SPACE(stream)) {
+	if (len > _space(stream)) {
 		if (stream->head + _space(stream) >= len) {
 			memcpy(stream->buf, stream->buf + stream->head, _length(stream));
 			stream->pos -= stream->head;
 			stream->head = 0;
 		} else {
-			if (_stream_resize(stream, (size_t)stream->pos + len) < 0)
+			if (v_stream_resize(stream, (size_t)stream->pos + len) < 0)
 				return -1;
 		}
 	}
@@ -82,24 +82,22 @@ v_stream_write(v_stream_t stream, const char *byte, v_ssize_t len)
 	return len;
 }
 
-char *
-v_stream_read(v_stream_s *stream, Py_ssize_t size)
+int
+v_stream_read(v_stream_t *stream, char *buf, v_ssize_t size)
 {
-	char *output;
-
-	assert(stream->buf != NULL);
-
-	if (size < 0 || size > V_STREAM_LENGTH(stream)) {
-		size = V_STREAM_LENGTH(stream);
+	if (size < 0 || size > _length(stream)) {
+		size = _length(stream);
 	}
 
-	output = stream->buf + stream->head;
+	memcpy(buf, stream->buf + stream->head, size);
 	stream->head += size;
 
 	if (stream->last_find_pos >= size) {
 		stream->last_find_pos -= size;
+	} else {
+		stream->last_find_pos = stream->head;
 	}
 
-	return PyBytes_FromStringAndSize(output, size);
+	return size;
 }
 
