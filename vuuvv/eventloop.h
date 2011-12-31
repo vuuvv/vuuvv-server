@@ -16,15 +16,16 @@
 #define V_IO_STATUS_ERROR       0x20
 */
 enum V_IO_STATUS {
-	V_IO_STATUS_NONE,
+	V_IO_STATUS_CLOSED,
 	V_IO_STATUS_USABLE,
 	V_IO_STATUS_READY,
-	V_IO_STATUS_STANDBY,
+	V_IO_STATUS_ESTABLISHED,
+	V_IO_STATUS_LISTENING,
+	V_IO_STATUS_CONNECTING,
+	V_IO_STATUS_STANDBY_C,
+	V_IO_STATUS_STANDBY_L,
 	V_IO_STATUS_CLOSING,
-	V_IO_STATUS_CLOSED,
-	V_IO_STATUS_ERROR,
 };
-
 
 typedef struct v_io_event_s v_io_event_t;
 typedef struct v_time_event_s v_time_event_t;
@@ -86,4 +87,5 @@ extern v_listening_t *v_create_listening(const char *hostname, int port, int bac
 extern v_connection_t *v_get_connection();
 extern void v_free_connection(v_connection_t *c);
 extern int v_connect(const char *hostname, int port, v_io_proc handler);
+extern void v_close_connection(v_connection_t *c);
 

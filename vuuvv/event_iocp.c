@@ -20,18 +20,6 @@ static void handle_close(v_io_event_t *ev);
 
 static HANDLE iocp;
 
-v_inline(void)
-v_close_ready_connection(v_connection_t *c)
-{
-	v_free_connection(c);
-
-	if (v_close_socket(c->event->fd) == -1) {
-		v_log_error(V_LOG_ERROR, v_socket_errno, v_close_socket_name " failed: ");
-	}
-	c->event->fd = (v_socket_t) -1;
-	c->event->status = V_IO_STATUS_CLOSED;
-}
-
 #define LPFN_COUNT 6
 static LPFN_ACCEPTEX              v_acceptex;
 static LPFN_GETACCEPTEXSOCKADDRS  v_getacceptexsockaddrs;
@@ -113,6 +101,20 @@ v_io_init(void)
 	return V_OK;
 }
 
+/**
+ * Turn io status(READY, CLOSED, USABLE) to READY. If event in
+ * other status, failed.
+ * Parameters:
+ *  ev[in/out:v_io_event_t]:
+ *      the event for prepare.
+ * Returns:
+ *      If success return V_OK, else V_ERR.
+ * Throws:
+ *      None.
+ * Remarks:
+ *      If failed, we close the socket and release the resource.
+ **/
+
 int
 v_io_prepare(v_io_event_t *ev)
 {
@@ -120,16 +122,17 @@ v_io_prepare(v_io_event_t *ev)
 
 	switch(ev->status) {
 		case V_IO_STATUS_READY:
+		case V_IO_STATUS_ESTABLISHED:
+		case V_IO_STATUS_LISTENING:
 			return V_OK;
 		case V_IO_STATUS_CLOSED:
-		case V_IO_STATUS_ERROR:
-		case V_IO_STATUS_NONE:
 			fd = v_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 			if (fd == INVALID_SOCKET) {
 				v_log_error(V_LOG_ALERT, v_socket_errno, v_socket_name " failed: ");
 				return V_ERR;
 			}
 			ev->fd = fd;
+			ev->status = V_IO_STATUS_USABLE;
 		case V_IO_STATUS_USABLE:
 			if (CreateIoCompletionPort((HANDLE) ev->fd, iocp, (ULONG_PTR)ev, 0) == NULL) {
 				v_log_error(V_LOG_ERROR, v_errno, "CreateIoCompletionPort() failed: ");
@@ -235,18 +238,18 @@ v_io_accept(v_io_event_t *ev)
 			&n, (LPOVERLAPPED)&ev->ovlp) == 0;
 
 	if (res == TRUE) {
-		ev->status = V_IO_STATUS_STANDBY;
+		ev->status = V_IO_STATUS_STANDBY_L;
 		return V_OK;
 	}
 
 	err = v_socket_errno;
 	if (err == WSA_IO_PENDING) {
-		ev->status = V_IO_STATUS_STANDBY;
+		ev->status = V_IO_STATUS_STANDBY_L;
 		return V_OK;
 	}
 
 	v_log_error(V_LOG_ALERT, err, "AcceptEx() failed: ");
-	v_close_ready_connection(c);
+	v_close_connection(c);
 	return V_ERR;
 }
 
@@ -270,10 +273,11 @@ handle_accept(v_io_event_t *ev)
 			(LPSOCKADDR *)&c->remote_addr, &rn,
 			(LPSOCKADDR *)&c->local_addr, &ln);
 
+	c->event->status = V_IO_STATUS_ESTABLISHED;
 	ev->handler(ev);
 
+	ev->status = V_IO_STATUS_LISTENING;
 	if (ev->type = V_IO_ACCEPT) {
-		ev->status = V_IO_STATUS_READY;
 		v_io_accept(ev);
 	}
 }
@@ -281,40 +285,54 @@ handle_accept(v_io_event_t *ev)
 static int
 v_io_connect(v_io_event_t *ev)
 {
-	int         n, res;
+	int             n, res, err;
+	v_connection_t  *c;
 
+	assert(ev->status == V_IO_STATUS_READY);
+
+	c = ev->data;
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
-	res = v_connectex(ev->fd, ev->remote_addr, sizeof(struct sockaddr), 
+	res = v_connectex(ev->fd, (struct sockaddr *)c->remote_addr, sizeof(struct sockaddr), 
 			NULL, 0, &n, &ev->ovlp);
 
 	if (res == TRUE) {
-		ev->status = V_IO_STATUS_STANDBY;
+		ev->status = V_IO_STATUS_CONNECTING;
 		return V_OK;
 	}
 
 	err = v_socket_errno;
 	if (err == WSA_IO_PENDING) {
-		ev->status = V_IO_STATUS_STANDBY;
+		ev->status = V_IO_STATUS_CONNECTING;
 		return V_OK;
 	}
 
 	v_log_error(V_LOG_ALERT, err, "Connectex() failed: ");
-	v_close_ready_connection(c);
+	v_close_connection(c);
 	return V_ERR;
 }
 
 static void
 handle_connect(v_io_event_t *ev)
 {
-	int  res;  
+	int  res, n;  
+	v_connection_t  *c;
+
+	c = ev->data;
 	res = setsockopt(ev->fd, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0);
 	if (res == INVALID_SOCKET) {
 		v_log_error(V_LOG_ALERT, v_socket_errno, "setsocketopt(SO_UPDATE_CONNECT_CONTEXT) failed: ");
 	}
 
-	ev->local_addr = v_malloc(sizeof(struct sockaddr));
-	getsockname(ev->fd, (struct sockeaddr *)ev->local_addr, sizeof(struct sockaddr));
-	ev->handle(ev);
+	c->local_addr = v_malloc(sizeof(struct sockaddr));
+	if (c->local_addr != NULL) {
+		n = sizeof(struct sockaddr);
+		getsockname(ev->fd, (struct sockaddr *)c->local_addr, &n);
+	} else {
+		v_log_error(V_LOG_ALERT, v_errno, "Alloc memory failed: ");
+	}
+
+	ev->status = V_IO_STATUS_ESTABLISHED;
+	ev->handler(ev);
 }
 
 static int
@@ -324,6 +342,8 @@ v_io_read(v_io_event_t *ev)
 	v_connection_t      *c;
 	WSABUF              wbuf;
 
+	assert(ev->status == V_IO_STATUS_ESTABLISHED);
+
 	c = ev->data;
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
 	wbuf.buf = NULL;
@@ -332,18 +352,18 @@ v_io_read(v_io_event_t *ev)
 	res = WSARecv(ev->fd, &wbuf, 1, &n, &flags, (LPOVERLAPPED)&ev->ovlp, NULL);
 
 	if (res == 0) {
-		ev->status = V_IO_STATUS_STANDBY;
+		ev->status = V_IO_STATUS_STANDBY_C;
 		return V_OK;
 	}
 
 	err = v_errno;
 	if (err == ERROR_IO_PENDING) {
-		ev->status = V_IO_STATUS_STANDBY;
+		ev->status = V_IO_STATUS_STANDBY_C;
 		return V_OK;
 	}
 
 	v_log_error(V_LOG_ALERT, err, "WSARecv failed: ");
-	ev->status = V_IO_STATUS_ERROR;
+	v_close_connection(c);
 	return V_ERR;
 }
 
@@ -363,6 +383,8 @@ v_io_write(v_io_event_t *ev)
 	v_connection_t      *c;
 	WSABUF              wbuf;
 
+	assert(ev->status == V_IO_STATUS_ESTABLISHED);
+
 	c = ev->data;
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
 	wbuf.buf = NULL;
@@ -372,17 +394,18 @@ v_io_write(v_io_event_t *ev)
 
 	if (res == 0) {
 		v_log(V_LOG_DEBUG, "Write Immediatly");
-		ev->status = V_IO_STATUS_STANDBY;
+		ev->status = V_IO_STATUS_STANDBY_L;
 		return V_OK;
 	}
 
 	err = v_errno;
 	if (err == ERROR_IO_PENDING) {
-		ev->status = V_IO_STATUS_STANDBY;
+		ev->status = V_IO_STATUS_STANDBY_L;
 		return V_OK;
 	}
 
 	v_log_error(V_LOG_ALERT, err, "WSASend failed: ");
+	v_close_connection(c);
 	return V_ERR;
 }
 

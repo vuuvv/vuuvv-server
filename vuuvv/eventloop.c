@@ -1,11 +1,18 @@
 #include "vuuvv.h"
 
 v_inline(void)
-v_shutdown_socket(fd)
+v_close_listening(v_listening_t *ls)
 {
-	if (v_close_socket((fd)) == INVALID_SOCKET) {
+	if (v_close_socket((ls->event->fd)) == INVALID_SOCKET) {
 		v_log_error(V_LOG_ERROR, v_socket_errno, v_close_socket_name " failed: ");
-	}      
+	}
+	v_free(ls->event);
+	v_free(ls->sockaddr);
+	v_free(ls->addr_text);
+	v_free(ls->buffer);
+	if (ls->connection != NULL)
+		v_close_connection(ls->connection);
+	v_free(ls);
 }
 
 int
@@ -30,7 +37,7 @@ v_eventloop_init()
 
 	for (i = 0; i < connections_count; i++) {
 		ev[i].type = V_IO_NONE;
-		ev[i].status = V_IO_STATUS_NONE;
+		ev[i].status = V_IO_STATUS_CLOSED;
 		ev[i].fd = (v_socket_t) -1;
 		ev[i].data = c;
 	}
@@ -57,8 +64,7 @@ v_eventloop_init()
 v_listening_t *
 v_create_listening(const char *hostname, int port, int backlog)
 {
-	struct sockaddr_in      host_addr;
-	v_socket_t              fd;
+	struct sockaddr_in      *host_addr;
 	v_listening_t           *ls;
 	v_io_event_t            *ev;
 
@@ -75,54 +81,55 @@ v_create_listening(const char *hostname, int port, int backlog)
 		return NULL;
 	}
 
+	host_addr = v_malloc(sizeof(struct sockaddr_in));
+	if (host_addr == NULL) {
+		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
+		v_free(ls);
+		v_free(ev);
+		return NULL;
+	}
+
 	v_memzero(ls, sizeof(v_listening_t));
 	v_memzero(ev, sizeof(v_io_event_t));
 
-	backlog = (backlog == 0) ? SOMAXCONN : backlog;
-	fd = v_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (fd == INVALID_SOCKET) {
-		v_log_error(V_LOG_ALERT, v_socket_errno, v_socket_name " failed: ");
+	if (v_io_prepare(ev) == V_ERR) {
 		v_free(ls);
 		v_free(ev);
+		v_free(host_addr);
 		return NULL;
 	}
 
 	ls->event = ev;
-	ev->fd = fd;
 	ev->data = ls;
 
-	host_addr.sin_family = AF_INET;
-	host_addr.sin_port = htons(port);
+	host_addr->sin_family = AF_INET;
+	host_addr->sin_port = htons(port);
 	if (hostname == NULL) {
-		host_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+		host_addr->sin_addr.s_addr = htonl(INADDR_ANY);
 	} else {
-		if ((host_addr.sin_addr.s_addr = inet_addr(hostname)) == INADDR_NONE) {
+		if ((host_addr->sin_addr.s_addr = inet_addr(hostname)) == INADDR_NONE) {
 			v_log(V_LOG_ALERT, "Host address invalid %s", hostname);
-			v_shutdown_socket(fd);
-			v_free(ls);
-			v_free(ev);
+			v_close_listening(ls);
 			return NULL;
 		}
 	}
 
-	if (bind(fd, (SOCKADDR *)&host_addr, sizeof(host_addr)) == SOCKET_ERROR) {
+	if (bind(ev->fd, (SOCKADDR *)host_addr, sizeof(struct sockaddr_in)) == SOCKET_ERROR) {
 		v_log_error(V_LOG_ALERT, v_socket_errno, "bind() failed: ");
-		v_shutdown_socket(fd);
-		v_free(ls);
-		v_free(ev);
+		v_close_listening(ls);
 		return NULL;
 	}
 
-	if (listen(fd, backlog) == SOCKET_ERROR) {
+	backlog = (backlog == 0) ? SOMAXCONN : backlog;
+	if (listen(ev->fd, backlog) == SOCKET_ERROR) {
 		v_log_error(V_LOG_ALERT, v_socket_errno, "listen() failed: ");
-		v_shutdown_socket(fd);
-		v_free(ls);
-		v_free(ev);
+		v_close_listening(ls);
 		return NULL;
 	}
 
+	ls->sockaddr = host_addr;
 	ev->type = V_IO_NONE;
-	ev->status = V_IO_STATUS_USABLE;
+	ev->status = V_IO_STATUS_LISTENING;
 
 	return ls;
 }
@@ -134,20 +141,30 @@ v_connect(const char *hostname, int port, v_io_proc handler)
 	struct sockaddr_in  *remote_addr;
 
 	remote_addr = v_malloc(sizeof(struct sockaddr_in));
-	remote_addr.sin_family = AF_INET;
-	remote_addr.sin_port = htons(port);
-	if ((remote_addr.sin_addr.s_addr = inet_addr(hostname)) == INADDR_NONE) {
+	remote_addr->sin_family = AF_INET;
+	remote_addr->sin_port = htons(port);
+	if ((remote_addr->sin_addr.s_addr = inet_addr(hostname)) == INADDR_NONE) {
 		v_log(V_LOG_ALERT, "Host address invalid %s", hostname);
 		v_free(remote_addr);
 		return V_ERR;
 	}
 
 	c = v_get_connection();
-	c->ev->remote_addr = remote_addr;
+	c->remote_addr = remote_addr;
 
-	return v_io_add(c->ev, V_IO_CONNECT, handler);
+	return v_io_add(c->event, V_IO_CONNECT, handler);
 }
 
+/**
+ * Get a connection and prepare it.
+ * Parameters:
+ *      None
+ * Returns:
+ *      If success return a connection with V_IO_STATUS_READY status, 
+ *      else NULL.
+ * Throws:
+ *      None.
+ **/
 v_connection_t *
 v_get_connection()
 {
@@ -180,4 +197,36 @@ v_free_connection(v_connection_t *c)
 	v_free(c->remote_addr);
 	c->local_addr = NULL;
 	c->remote_addr = NULL;
+	c->event->type = V_IO_NONE;
+}
+
+void
+v_close_connection(v_connection_t *c)
+{
+	v_io_event_t    *ev = c->event;
+
+	switch(ev->status) {
+		case V_IO_STATUS_STANDBY_C:
+		case V_IO_STATUS_ESTABLISHED:
+			v_io_add(ev, V_IO_CLOSE, NULL);
+			return;
+		case V_IO_STATUS_CLOSING:
+			v_log(V_LOG_ALERT, "Close a connection in 'CLOSING' status");
+			return;
+		case V_IO_STATUS_CLOSED:
+		case V_IO_STATUS_USABLE:
+		case V_IO_STATUS_READY:
+		case V_IO_STATUS_CONNECTING:
+		case V_IO_STATUS_STANDBY_L:
+			if (v_close_socket(ev->fd) == -1) {
+				v_log_error(V_LOG_ERROR, v_socket_errno, v_close_socket_name " failed: ");
+			}
+			ev->fd = (v_socket_t) -1;
+			ev->status = V_IO_STATUS_CLOSED;
+			v_free_connection(c);
+			return;
+		default:
+			v_log(V_LOG_ALERT, "Close a connection in Unknown status: %d", ev->status);
+			return;
+	}
 }
