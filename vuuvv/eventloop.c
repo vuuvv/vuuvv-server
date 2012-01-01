@@ -23,13 +23,13 @@ v_eventloop_init()
 	v_connection_t  *c, *next;
 
 	connections_count = v_config.connections_count;
-	c = v_new(v_connection_t, connections_count);
+	c = v_new_n(v_connection_t, connections_count);
 	if (c == NULL) {
 		v_log_error(V_LOG_ERROR, v_errno, "Alloc memory failed: ");
 		return V_ERR;
 	}
 
-	ev = v_new(v_io_event_t, connections_count);
+	ev = v_new_n(v_io_event_t, connections_count);
 	if (ev == NULL) {
 		v_log_error(V_LOG_ERROR, v_errno, "Alloc memory failed: ");
 		return V_ERR;
@@ -67,24 +67,34 @@ v_create_listening(const char *hostname, int port, int backlog)
 	struct sockaddr_in      *host_addr;
 	v_listening_t           *ls;
 	v_io_event_t            *ev;
+	char                    *buf;
 
-	ls = v_malloc(sizeof(v_listening_t));
+	ls = v_new(v_listening_t);
 	if (ls == NULL) {
 		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
 		return NULL;
 	}
 
-	ev = v_malloc(sizeof(v_io_event_t));
-	if (ev == NULL) {
+	buf = v_malloc(2 * sizeof(struct sockaddr) + 16);
+	if (buf == NULL) {
 		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
 		v_free(ls);
 		return NULL;
 	}
 
-	host_addr = v_malloc(sizeof(struct sockaddr_in));
+	ev = v_new(v_io_event_t);
+	if (ev == NULL) {
+		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
+		v_free(ls);
+		v_free(buf);
+		return NULL;
+	}
+
+	host_addr = v_new(struct sockaddr_in);
 	if (host_addr == NULL) {
 		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
 		v_free(ls);
+		v_free(buf);
 		v_free(ev);
 		return NULL;
 	}
@@ -94,12 +104,14 @@ v_create_listening(const char *hostname, int port, int backlog)
 
 	if (v_io_prepare(ev) == V_ERR) {
 		v_free(ls);
+		v_free(buf);
 		v_free(ev);
 		v_free(host_addr);
 		return NULL;
 	}
 
 	ls->event = ev;
+	ls->buffer = buf;
 	ev->data = ls;
 
 	host_addr->sin_family = AF_INET;

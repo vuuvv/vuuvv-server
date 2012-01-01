@@ -16,10 +16,11 @@
 #include <time.h>
 #include <process.h>
 
-#include "eventloop.h"
-#include "stream.h"
 #include "config.h"
 #include "log.h"
+#include "common.h"
+#include "eventloop.h"
+#include "stream.h"
 #include "event_iocp.h"
 
 #endif /* PY__VUUVV_H */

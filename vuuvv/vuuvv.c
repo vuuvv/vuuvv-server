@@ -16,7 +16,7 @@ test_read(v_io_event_t *ev)
 	recv(fd, buf, n, 0);
 	buf[n] = '\0';
 
-	printf("test_read: %s\n", buf);
+	//printf("test_read: %s\n", buf);
 	v_free(buf);
 	return V_OK;
 }
@@ -24,7 +24,7 @@ test_read(v_io_event_t *ev)
 static int
 test_close(v_io_event_t *ev)
 {
-	printf("connection %d closed\n", ev->fd);
+	//printf("connection %d closed\n", ev->fd);
 	return V_OK;
 }
 
@@ -37,17 +37,32 @@ test(v_io_event_t *lev)
 	return V_OK;
 }
 
+static int
+test_connect(v_io_event_t *ev)
+{
+	v_log(V_LOG_DEBUG, "connected");
+	return V_OK;
+}
+
 static PyObject *
 vuuvv_test(PyObject *self, PyObject *args, PyObject *kwds)
 {
-	_PyTime_timeval tp;
-	v_listening_t *ls;
-	_PyTime_gettimeofday(&tp);
+	_PyTime_timeval tp1;
+	int i;
+	v_listening_t *ls = NULL;
+	v_connection_t *c = NULL;
+	int time;
+
+	_PyTime_gettimeofday(&tp1);
+
 	v_eventloop_init();
 	v_io_init();
-	printf("%d, %d\n", tp.tv_sec, tp.tv_usec);
+
 	ls = v_create_listening(NULL, 9999, 0);
 	v_io_add(ls->event, V_IO_ACCEPT, test);
+
+	v_connect("127.0.0.1", 80, test_connect);
+
 	while(1) {
 		v_io_poll();
 	}

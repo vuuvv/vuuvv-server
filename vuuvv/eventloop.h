@@ -27,15 +27,10 @@ enum V_IO_STATUS {
 	V_IO_STATUS_CLOSING,
 };
 
-typedef struct v_io_event_s v_io_event_t;
-typedef struct v_time_event_s v_time_event_t;
-typedef struct v_eventloop_s v_eventloop_t;
-typedef struct v_connection_s v_connection_t;
-
 typedef int (* v_io_proc)(v_io_event_t *ev);
 typedef int (* v_time_proc)(v_time_event_t *ev);
 
-typedef struct v_io_event_s {
+struct v_io_event_s {
 	v_socket_t              fd;
 	void                    *data;
 	unsigned short          type;
@@ -46,7 +41,7 @@ typedef struct v_io_event_s {
 #endif
 };
 
-typedef struct v_time_event_s {
+struct v_time_event_s {
 	long long               id;
 	long                    sec;
 	long                    ms;
@@ -55,11 +50,11 @@ typedef struct v_time_event_s {
 	struct v_time_event_s   *next;
 };
 
-typedef struct v_eventloop_s {
+struct v_eventloop_s {
 	v_time_event_t          *time_event_head;
-} v_eventloop_t;
+};
 
-typedef struct v_listening_s {
+struct v_listening_s {
 	v_io_event_t            *event;
 
 	struct sockaddr_in      *sockaddr;
@@ -72,9 +67,9 @@ typedef struct v_listening_s {
 
 	v_connection_t          *connection;
 	char                    *buffer;
-} v_listening_t;
+};
 
-struct v_connection_s{
+struct v_connection_s {
 	v_io_event_t            *event;
 
 	struct sockaddr_in      *remote_addr;

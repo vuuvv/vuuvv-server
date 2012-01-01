@@ -108,11 +108,11 @@ v_io_init(void)
  *  ev[in/out:v_io_event_t]:
  *      the event for prepare.
  * Returns:
- *      If success return V_OK, else V_ERR.
+ *  If success return V_OK, else V_ERR.
  * Throws:
- *      None.
+ *  None.
  * Remarks:
- *      If failed, we close the socket and release the resource.
+ *  If failed, we close the socket and release the resource.
  **/
 
 int
@@ -153,7 +153,7 @@ v_io_poll()
 	v_io_event_t    *ev;
 	OVERLAPPED      *ovlp;
 
-	res = GetQueuedCompletionStatus(iocp, &n, (PULONG_PTR)&ev, &ovlp, 50);
+	res = GetQueuedCompletionStatus(iocp, &n, (PULONG_PTR)&ev, &ovlp, 10);
 
 	if (res) {
 		v_log(V_LOG_DEBUG, "Get Event %d, %d bytes", ev->type, n);
@@ -182,12 +182,10 @@ v_io_poll()
 int
 v_io_add(v_io_event_t *ev, int event, v_io_proc handler)
 {
-	if (v_io_prepare(ev) == V_ERR) {
-		return V_ERR;
-	}
 	ev->type = event;
 	ev->handler = handler;
 
+	v_log(V_LOG_DEBUG, "io add");
 	switch(event) {
 		case V_IO_ACCEPT:
 			return v_io_accept(ev);
@@ -215,13 +213,9 @@ v_io_accept(v_io_event_t *ev)
 	size_t          n;
 	int             err, res;
 
-	ls = ev->data;
+	assert(ev->status == V_IO_STATUS_LISTENING);
 
-	ls->buffer = v_malloc(2 * sizeof(struct sockaddr) + 16);
-	if (ls->buffer == NULL) {
-		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
-		return V_ERR;
-	}
+	ls = ev->data;
 
 	c = v_get_connection();
 	if (c == NULL) {
@@ -232,7 +226,6 @@ v_io_accept(v_io_event_t *ev)
 
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
 
-	printf("ready accept fd %d\n", c->event->fd);
 	res = v_acceptex(ev->fd, c->event->fd, ls->buffer, 0, 
 			sizeof(struct sockaddr) + 16, sizeof(struct sockaddr) + 16,
 			&n, (LPOVERLAPPED)&ev->ovlp) == 0;
@@ -285,12 +278,23 @@ handle_accept(v_io_event_t *ev)
 static int
 v_io_connect(v_io_event_t *ev)
 {
-	int             n, res, err;
-	v_connection_t  *c;
+	int                 n, res, err;
+	v_connection_t      *c;
+	struct sockaddr_in  local;
 
 	assert(ev->status == V_IO_STATUS_READY);
 
 	c = ev->data;
+
+	local.sin_family = AF_INET;
+	local.sin_addr.s_addr = htonl(ADDR_ANY);
+	local.sin_port = htons(0);
+	if (bind(ev->fd, (SOCKADDR *)&local, sizeof(struct sockaddr_in)) == SOCKET_ERROR) {
+		v_log_error(V_LOG_ALERT, v_socket_errno, "bind() in ConnectEx failed: ");
+		v_close_connection(c);
+		return V_ERR;
+	}
+
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
 	res = v_connectex(ev->fd, (struct sockaddr *)c->remote_addr, sizeof(struct sockaddr), 
 			NULL, 0, &n, &ev->ovlp);
@@ -323,7 +327,7 @@ handle_connect(v_io_event_t *ev)
 		v_log_error(V_LOG_ALERT, v_socket_errno, "setsocketopt(SO_UPDATE_CONNECT_CONTEXT) failed: ");
 	}
 
-	c->local_addr = v_malloc(sizeof(struct sockaddr));
+	c->local_addr = v_new(struct sockaddr);
 	if (c->local_addr != NULL) {
 		n = sizeof(struct sockaddr);
 		getsockname(ev->fd, (struct sockaddr *)c->local_addr, &n);
@@ -367,6 +371,10 @@ v_io_read(v_io_event_t *ev)
 	return V_ERR;
 }
 
+/**
+ *  If you the length of read buffer is zero, mean socket closed by peer.
+ *  You should check this at event handler function.
+ **/
 static void
 handle_read(v_io_event_t *ev)
 {
@@ -382,13 +390,15 @@ v_io_write(v_io_event_t *ev)
 	int                 err, res, n, flags = 0;
 	v_connection_t      *c;
 	WSABUF              wbuf;
+	v_string_t          *data;
 
 	assert(ev->status == V_IO_STATUS_ESTABLISHED);
 
 	c = ev->data;
+	data = c->data;
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
-	wbuf.buf = NULL;
-	wbuf.len = 0;
+	wbuf.buf = data->data;
+	wbuf.len = data->len;
 
 	res = WSASend(ev->fd, &wbuf, 1, &n, 0, (LPOVERLAPPED)&ev->ovlp, NULL);
 
@@ -430,7 +440,7 @@ v_io_close(v_io_event_t *ev)
 	res = v_disconnectex(ev->fd, (LPOVERLAPPED)&ev->ovlp, TF_REUSE_SOCKET, 0);
 
 	if (res == 0) {
-		v_log(V_LOG_DEBUG, "Closed Immediatly");
+		v_log(V_LOG_DEBUG, "Close Immediatly");
 		return V_OK;
 	}
 
@@ -447,6 +457,7 @@ v_io_close(v_io_event_t *ev)
 static void
 handle_close(v_io_event_t *ev)
 {
+	v_log(V_LOG_DEBUG, "handle close");
 	ev->handler(ev);
 	v_free_connection(ev->data);
 	ev->status = V_IO_STATUS_READY;

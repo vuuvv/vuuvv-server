@@ -7,7 +7,7 @@ libraries = [
 ]
 
 macros = [
-	('_CRT_SECURE_NO_WARNINGS', True),
+	('_CRT_SECURE_NO_WARNINGS', True), ('DEBUG', True)
 ]
 
 include_dirs = ['.', sysconfig.get_python_inc()] 
@@ -16,6 +16,7 @@ headers = [
 	'vuuvv.h', 
 	'defines.h',
 	'log.h',
+	'common.h',
 	'stream.h',
 	'config.h',
 	'eventloop.h', 

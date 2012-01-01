@@ -16,12 +16,24 @@
 #define v_max(val1, val2)  ((val1 < val2) ? (val2) : (val1))
 #define v_min(val1, val2)  ((val1 > val2) ? (val2) : (val1))
 
-#define v_malloc        PyMem_Malloc
-#define v_new           PyMem_New
-#define v_free          PyMem_Free
-#define v_realloc       PyMem_Realloc
+#define v_malloc            PyObject_Malloc
+#define v_free              PyObject_Free
+#define v_realloc           PyObject_Realloc
+#define v_new(type)         v_malloc(sizeof(type))
+#define v_new_n(type, n)    v_malloc(sizeof(type) * n)
 
 #define v_inline        Py_LOCAL_INLINE
 
 #define v_ssize_t       Py_ssize_t
 #define V_SSIZE_T_MAX   PY_SSIZE_T_MAX
+
+
+/* typedef */
+typedef struct v_string_s       v_string_t;
+typedef struct v_stream_s       v_stream_t;
+typedef struct v_io_event_s     v_io_event_t;
+typedef struct v_time_event_s   v_time_event_t;
+typedef struct v_eventloop_s    v_eventloop_t;
+typedef struct v_connection_s   v_connection_t;
+typedef struct v_listening_s    v_listening_t;
+
