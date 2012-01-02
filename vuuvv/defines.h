@@ -30,6 +30,7 @@
 
 /* typedef */
 typedef struct v_string_s       v_string_t;
+typedef struct v_method_s       v_method_t; 
 typedef struct v_stream_s       v_stream_t;
 typedef struct v_io_event_s     v_io_event_t;
 typedef struct v_time_event_s   v_time_event_t;

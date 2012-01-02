@@ -11,18 +11,6 @@
 #define V_STREAM_INIT_SIZE 256
 
 v_inline(int)
-_length(v_stream_t *stream)
-{
-	return stream->pos - stream->head;
-}
-
-v_inline(int)
-_space(v_stream_t *stream)
-{
-	return stream->alloc - stream->pos;
-}
-
-v_inline(int)
 v_stream_resize(v_stream_t *stream, size_t size)
 {
 	char *new_buf = NULL;
@@ -64,7 +52,7 @@ v_stream_find(v_stream_t *stream, v_ssize_t start, char *buf, v_ssize_t size)
 {
 	v_ssize_t   len, pos;
 
-	len = _length(stream);
+	len = v_stream_length(stream);
 	if (start > len) {
 		return -1;
 	}
@@ -117,9 +105,9 @@ v_stream_reset(v_stream_t *stream)
 int
 v_stream_write(v_stream_t *stream, const char *bytes, v_ssize_t len)
 {
-	if (len > _space(stream)) {
-		if (stream->head + _space(stream) >= len) {
-			memcpy(stream->buf, stream->buf + stream->head, _length(stream));
+	if (len > v_stream_space(stream)) {
+		if (stream->head + v_stream_space(stream) >= len) {
+			memcpy(stream->buf, stream->buf + stream->head, v_stream_length(stream));
 			stream->pos -= stream->head;
 			stream->head = 0;
 		} else {
@@ -151,8 +139,8 @@ v_stream_read(v_stream_t *stream, v_ssize_t size)
 		return NULL;
 	}
 
-	if (size < 0 || size > _length(stream)) {
-		size = _length(stream);
+	if (size < 0 || size > v_stream_length(stream)) {
+		size = v_stream_length(stream);
 	}
 
 	memcpy(buf, stream->buf + stream->head, size);
@@ -190,7 +178,12 @@ v_stream_read_until(v_stream_t *stream, v_string_t **str, char *delimeter, v_ssi
 
 	pos = v_stream_find(stream, 0, delimeter, size);
 	if (pos == -1) {
-		return max < _length(stream) ? V_ERR : V_AGAIN;
+		if (max > v_stream_length(stream)) {
+			return V_AGAIN;
+		} else {
+			v_log(V_LOG_ALERT, "v_stream_read_until() failed, exceed the max size");
+			return V_ERR;
+		}
 	}
 	pos += size;
 
@@ -202,5 +195,4 @@ v_stream_read_until(v_stream_t *stream, v_string_t **str, char *delimeter, v_ssi
 	stream->head += pos - max;
 	return V_OK;
 }
-
 

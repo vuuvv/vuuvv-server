@@ -185,7 +185,7 @@ v_io_add(v_io_event_t *ev, int event, v_io_proc handler)
 	ev->type = event;
 	ev->handler = handler;
 
-	v_log(V_LOG_DEBUG, "io add");
+	v_log(V_LOG_DEBUG, "io add %d", event);
 	switch(event) {
 		case V_IO_ACCEPT:
 			return v_io_accept(ev);
@@ -223,6 +223,8 @@ v_io_accept(v_io_event_t *ev)
 	}
 
 	ls->connection = c;
+	c->head = ls->head;
+	v_add_to_accepted_list(c);
 
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
 
@@ -390,15 +392,13 @@ v_io_write(v_io_event_t *ev)
 	int                 err, res, n, flags = 0;
 	v_connection_t      *c;
 	WSABUF              wbuf;
-	v_string_t          *data;
 
 	assert(ev->status == V_IO_STATUS_ESTABLISHED);
 
 	c = ev->data;
-	data = c->data;
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
-	wbuf.buf = data->data;
-	wbuf.len = data->len;
+	wbuf.buf = c->write_bytes->data;
+	wbuf.len = c->write_bytes->len;
 
 	res = WSASend(ev->fd, &wbuf, 1, &n, 0, (LPOVERLAPPED)&ev->ovlp, NULL);
 
@@ -428,6 +428,9 @@ handle_write(v_io_event_t *ev)
 		v_io_read(ev);
 }
 
+/**
+ * This function is only for connection, not for listening.
+ **/
 static int
 v_io_close(v_io_event_t *ev)
 {
@@ -437,10 +440,12 @@ v_io_close(v_io_event_t *ev)
 	c = ev->data;
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
 
+	v_remove_from_accepted_list(c);
 	res = v_disconnectex(ev->fd, (LPOVERLAPPED)&ev->ovlp, TF_REUSE_SOCKET, 0);
 
 	if (res == 0) {
 		v_log(V_LOG_DEBUG, "Close Immediatly");
+		ev->status = V_IO_STATUS_CLOSING;
 		return V_OK;
 	}
 
@@ -459,7 +464,7 @@ handle_close(v_io_event_t *ev)
 {
 	v_log(V_LOG_DEBUG, "handle close");
 	ev->handler(ev);
-	v_free_connection(ev->data);
+	v_connection_idle(ev->data);
 	ev->status = V_IO_STATUS_READY;
 }
 

@@ -27,8 +27,8 @@ enum V_IO_STATUS {
 	V_IO_STATUS_CLOSING,
 };
 
-typedef int (* v_io_proc)(v_io_event_t *ev);
-typedef int (* v_time_proc)(v_time_event_t *ev);
+typedef int (*v_io_proc)(v_io_event_t *ev);
+typedef int (*v_time_proc)(v_time_event_t *ev);
 
 struct v_io_event_s {
 	v_socket_t              fd;
@@ -67,6 +67,8 @@ struct v_listening_s {
 
 	v_connection_t          *connection;
 	char                    *buffer;
+
+	v_connection_t          **head;
 };
 
 struct v_connection_s {
@@ -74,13 +76,67 @@ struct v_connection_s {
 
 	struct sockaddr_in      *remote_addr;
 	struct sockaddr_in      *local_addr;
-	void                    *data;
+
+	v_stream_t              *buf;
+
+	v_ssize_t               read_count;
+	v_string_t              *read_delimeter;
+	v_method_t              *read_callback;
+
+	v_method_t              *write_callback;
+	v_string_t              *write_bytes;
+
+	v_connection_t          *next;      /* another use: idle list */
+	v_connection_t          *prev;
+	v_connection_t          **head;     /* head of accept list, null mean not in the list */
 };
 
 extern int v_eventloop_init();
 extern v_listening_t *v_create_listening(const char *hostname, int port, int backlog);
 extern v_connection_t *v_get_connection();
-extern void v_free_connection(v_connection_t *c);
+extern void v_connection_idle(v_connection_t *c);
 extern int v_connect(const char *hostname, int port, v_io_proc handler);
 extern void v_close_connection(v_connection_t *c);
+extern int v_connection_read(v_connection_t *s, v_ssize_t size, v_method_t *callback);
+extern int v_connection_read_until(v_connection_t *s, char *delimeter, v_ssize_t size, v_ssize_t max, v_method_t *callback);
+
+
+v_inline(void)
+v_add_to_accepted_list(v_connection_t *c)
+{
+	v_connection_t *h = *(c->head);
+
+	assert(c->head != NULL);    /* Suppose the head value is set when call v_io_accept() */
+
+	v_log(V_LOG_DEBUG, "add accept connection to list");
+
+	if (h == NULL) {
+		/* empty */
+		c->head = &c;
+		c->prev = c;
+		c->next = c;
+	} else {
+		c->next = h;
+		c->prev = h->prev;
+		h->prev->next = c;
+		h->prev = c;
+	}
+}
+
+v_inline(void)
+v_remove_from_accepted_list(v_connection_t *c)
+{
+	v_log(V_LOG_DEBUG, "remove accept connection from list");
+
+	if (c->head == NULL)
+		return;
+
+	if (c->next != c) {
+		c->prev->next = c->next;
+		c->next->prev = c->prev;
+		if (c == *(c->head))
+			*(c->head) = c->next;
+	}
+	c->head = NULL;
+}
 

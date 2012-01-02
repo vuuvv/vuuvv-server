@@ -10,6 +10,7 @@ v_close_listening(v_listening_t *ls)
 	v_free(ls->sockaddr);
 	v_free(ls->addr_text);
 	v_free(ls->buffer);
+	v_free(ls->head);
 	if (ls->connection != NULL)
 		v_close_connection(ls->connection);
 	v_free(ls);
@@ -32,6 +33,7 @@ v_eventloop_init()
 	ev = v_new_n(v_io_event_t, connections_count);
 	if (ev == NULL) {
 		v_log_error(V_LOG_ERROR, v_errno, "Alloc memory failed: ");
+		v_free(c);
 		return V_ERR;
 	}
 
@@ -47,8 +49,9 @@ v_eventloop_init()
 	do {
 		i--;
 
-		c[i].data = next;
+		c[i].next = next;
 		c[i].event = &ev[i];
+		c[i].head = NULL;
 
 		next = &c[i];
 
@@ -99,6 +102,16 @@ v_create_listening(const char *hostname, int port, int backlog)
 		return NULL;
 	}
 
+	ls->head = v_new(void *);
+	if (ls->head == NULL) {
+		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
+		v_free(host_addr);
+		v_free(ls);
+		v_free(buf);
+		v_free(ev);
+		return NULL;
+	}
+
 	v_memzero(ls, sizeof(v_listening_t));
 	v_memzero(ev, sizeof(v_io_event_t));
 
@@ -142,6 +155,7 @@ v_create_listening(const char *hostname, int port, int backlog)
 	ls->sockaddr = host_addr;
 	ev->type = V_IO_NONE;
 	ev->status = V_IO_STATUS_LISTENING;
+	ls->head = NULL;
 
 	return ls;
 }
@@ -167,6 +181,47 @@ v_connect(const char *hostname, int port, v_io_proc handler)
 	return v_io_add(c->event, V_IO_CONNECT, handler);
 }
 
+static int
+handle_events(v_io_event_t *ev)
+{
+	return V_OK;
+}
+
+int
+v_connection_read(v_connection_t *s, v_ssize_t size, v_method_t *callback)
+{
+	v_string_t      *data;
+	if (v_stream_length(s->buf) >= size) {
+		data = v_stream_read(s->buf, size);
+		if (data == NULL) {
+			v_close_connection(s);
+			return V_ERR;
+		}
+		return v_method_call(callback, 1, data);
+	}
+	s->read_count = size;
+	s->read_callback = callback;
+	return v_io_add(s->event, V_IO_READ, handle_events);
+}
+
+int
+v_connection_read_until(v_connection_t *s, char *delimeter, v_ssize_t size, v_ssize_t max, v_method_t *callback)
+{
+	v_string_t      *data;
+	int             res;
+
+	res = v_stream_read_until(s->buf, &data, delimeter, size, max);
+	if (res == V_OK) {
+		return v_method_call(callback, 1, data);
+	} else if (res == V_AGAIN) {
+		s->read_callback = callback;
+		return v_io_add(s->event, V_IO_READ, handle_events);
+	} 
+	/* V_ERR */
+	v_close_connection(s);
+	return V_ERR;
+}
+
 /**
  * Get a connection and prepare it.
  * Parameters:
@@ -190,7 +245,7 @@ v_get_connection()
 		return NULL;
 	}
 
-	v_config.free_connections = c->data;
+	v_config.free_connections = c->next;
 	v_config.free_connections_count--;
 
 	v_io_prepare(c->event);
@@ -200,9 +255,19 @@ v_get_connection()
 }
 
 void
-v_free_connection(v_connection_t *c)
+v_connection_free(v_connection_t *c)
 {
-	c->data = v_config.free_connections;
+	v_free(c->local_addr);
+	v_free(c->remote_addr);
+	v_free(c->read_callback);
+	v_free(c->write_callback);
+	v_free(c);
+}
+
+void
+v_connection_idle(v_connection_t *c)
+{
+	c->next = v_config.free_connections;
 	v_config.free_connections = c;
 	v_config.free_connections_count++;
 	v_free(c->local_addr);
@@ -235,10 +300,12 @@ v_close_connection(v_connection_t *c)
 			}
 			ev->fd = (v_socket_t) -1;
 			ev->status = V_IO_STATUS_CLOSED;
-			v_free_connection(c);
+			v_remove_from_accepted_list(c);
+			v_connection_idle(c);
 			return;
 		default:
 			v_log(V_LOG_ALERT, "Close a connection in Unknown status: %d", ev->status);
 			return;
 	}
 }
+
