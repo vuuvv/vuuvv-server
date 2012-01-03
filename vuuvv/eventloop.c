@@ -71,6 +71,7 @@ v_create_listening(const char *hostname, int port, int backlog)
 	v_listening_t           *ls;
 	v_io_event_t            *ev;
 	char                    *buf;
+	v_connection_t          **head;
 
 	ls = v_new(v_listening_t);
 	if (ls == NULL) {
@@ -102,8 +103,8 @@ v_create_listening(const char *hostname, int port, int backlog)
 		return NULL;
 	}
 
-	ls->head = v_new(void *);
-	if (ls->head == NULL) {
+	head = v_new(void *);
+	if (head == NULL) {
 		v_log_error(V_LOG_ALERT, v_errno, "v_malloc failed: ");
 		v_free(host_addr);
 		v_free(ls);
@@ -111,6 +112,7 @@ v_create_listening(const char *hostname, int port, int backlog)
 		v_free(ev);
 		return NULL;
 	}
+	*head = NULL;
 
 	v_memzero(ls, sizeof(v_listening_t));
 	v_memzero(ev, sizeof(v_io_event_t));
@@ -126,6 +128,7 @@ v_create_listening(const char *hostname, int port, int backlog)
 	ls->event = ev;
 	ls->buffer = buf;
 	ev->data = ls;
+	ls->head = head;
 
 	host_addr->sin_family = AF_INET;
 	host_addr->sin_port = htons(port);
@@ -155,7 +158,6 @@ v_create_listening(const char *hostname, int port, int backlog)
 	ls->sockaddr = host_addr;
 	ev->type = V_IO_NONE;
 	ev->status = V_IO_STATUS_LISTENING;
-	ls->head = NULL;
 
 	return ls;
 }

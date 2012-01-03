@@ -224,6 +224,7 @@ v_io_accept(v_io_event_t *ev)
 
 	ls->connection = c;
 	c->head = ls->head;
+	v_log(V_LOG_DEBUG, "before add to accepted list %x", c->head);
 	v_add_to_accepted_list(c);
 
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
