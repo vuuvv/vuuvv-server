@@ -33,6 +33,7 @@ test(v_io_event_t *lev)
 {
 	v_listening_t *ls = lev->data;
 	v_connection_t *c = ls->connection;
+	v_connection_read_until(c, "\r\n\r\n", 4, -1, NULL); 
 	v_io_add(c->event, V_IO_CLOSE, test_close);
 	return V_OK;
 }

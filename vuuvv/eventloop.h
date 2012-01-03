@@ -6,15 +6,6 @@
 #define V_IO_CLOSE              0x20
 #define V_IO_SHUTDOWN           0x40
 
-/*
-#define V_IO_STATUS_NONE        0x00
-#define V_IO_STATUS_USABLE      0x01
-#define V_IO_STATUS_READY       0x02
-#define V_IO_STATUS_STANDBY     0x04
-#define V_IO_STATUS_CLOSING     0x08
-#define V_IO_STATUS_CLOSED      0x10
-#define V_IO_STATUS_ERROR       0x20
-*/
 enum V_IO_STATUS {
 	V_IO_STATUS_CLOSED,
 	V_IO_STATUS_USABLE,
@@ -25,6 +16,13 @@ enum V_IO_STATUS {
 	V_IO_STATUS_STANDBY_C,
 	V_IO_STATUS_STANDBY_L,
 	V_IO_STATUS_CLOSING,
+};
+
+enum V_CONNECTION_STATUS {
+	V_CONNECTION_NONE,
+	V_CONNECTION_READ,
+	V_CONNECTION_READ_UNTIL,
+	V_CONNECTION_WRITE,
 };
 
 typedef int (*v_io_proc)(v_io_event_t *ev);
@@ -79,12 +77,14 @@ struct v_connection_s {
 
 	v_stream_t              *buf;
 
+	int                     status;
 	v_ssize_t               read_count;
-	v_string_t              *read_delimeter;
+	v_string_t              read_delimeter;
+	v_ssize_t               read_until_max;
 	v_method_t              *read_callback;
 
 	v_method_t              *write_callback;
-	v_string_t              *write_bytes;
+	v_string_t              write_bytes;
 
 	v_connection_t          *next;      /* another use: idle list */
 	v_connection_t          *prev;

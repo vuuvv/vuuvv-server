@@ -111,15 +111,41 @@ v_stream_write(v_stream_t *stream, const char *bytes, v_ssize_t len)
 			stream->pos -= stream->head;
 			stream->head = 0;
 		} else {
-			if (v_stream_resize(stream, (size_t)stream->pos + len) < 0)
-				return -1;
+			if (v_stream_resize(stream, (size_t)stream->pos + len) == V_ERR)
+				return V_ERR;
 		}
 	}
 
 	memcpy(stream->buf + stream->pos, bytes, len);
 	stream->pos += len;
 
-	return len;
+	return V_OK;
+}
+
+int
+v_stream_recv_from_socket(v_stream_t *stream, v_socket_t fd)
+{
+	int   n;
+
+	ioctlsocket(fd, FIONREAD, &n);
+	if (n == 0)         /* indicate socket is closed */
+		return V_ERR;
+
+	if (n > v_stream_space(stream)) {
+		if (stream->head + v_stream_space(stream) >= n) {
+			memcpy(stream->buf, stream->buf + stream->head, v_stream_length(stream));
+			stream->pos -= stream->head;
+			stream->head = 0;
+		} else {
+			if (v_stream_resize(stream, (size_t)stream->pos + n) == V_ERR)
+				return V_ERR;
+		}
+	}
+
+	recv(fd, stream->buf + stream->pos, n, 0);
+	stream->pos += n;
+
+	return V_OK;
 }
 
 v_string_t *

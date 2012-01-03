@@ -183,45 +183,104 @@ v_connect(const char *hostname, int port, v_io_proc handler)
 	return v_io_add(c->event, V_IO_CONNECT, handler);
 }
 
+v_inline(int)
+read_from_socket(v_connection_t *c)
+{
+	if (v_stream_recv_from_socket(c->buf, c->event->fd) == V_ERR) {
+		v_close_connection(c);
+		return V_ERR;
+	}
+	return V_OK;
+}
+
 static int
 handle_events(v_io_event_t *ev)
 {
+	v_connection_t      *c;
+	int             res;
+	v_string_t      *data;
+
+	c = ev->data;
+	switch(c->status) {
+		case V_CONNECTION_READ:
+			if (read_from_socket(c) == V_ERR) {
+				return V_ERR;
+			}
+			if (v_stream_length(c->buf) >= c->read_count) {
+				data = v_stream_read(c->buf, c->read_count);
+				if (data == NULL) {
+					v_close_connection(c);
+					return V_ERR;
+				}
+				return v_method_call(c->read_callback, 1, data);
+			}
+			return v_io_add(c->event, V_IO_READ, handle_events);
+		case V_CONNECTION_READ_UNTIL:
+			if (read_from_socket(c) == V_ERR) {
+				return V_ERR;
+			}
+			res = v_stream_read_until(c->buf, &data, c->read_delimeter.data, c->read_delimeter.len, c->read_until_max);
+			if (res == V_OK) {
+				return v_method_call(c->read_callback, 1, data);
+			} else if (res == V_AGAIN) {
+				return v_io_add(c->event, V_IO_READ, handle_events);
+			} 
+			v_close_connection(c);
+			return V_ERR;
+		case V_IO_WRITE:
+		case V_IO_CLOSE:
+			return v_method_call(c->write_callback, 0, NULL);
+	}
 	return V_OK;
 }
 
 int
-v_connection_read(v_connection_t *s, v_ssize_t size, v_method_t *callback)
+v_connection_read(v_connection_t *c, v_ssize_t size, v_method_t *callback)
 {
 	v_string_t      *data;
-	if (v_stream_length(s->buf) >= size) {
-		data = v_stream_read(s->buf, size);
+	if (v_stream_length(c->buf) >= size) {
+		data = v_stream_read(c->buf, size);
 		if (data == NULL) {
-			v_close_connection(s);
+			v_close_connection(c);
 			return V_ERR;
 		}
 		return v_method_call(callback, 1, data);
 	}
-	s->read_count = size;
-	s->read_callback = callback;
-	return v_io_add(s->event, V_IO_READ, handle_events);
+	c->read_count = size;
+	c->read_callback = callback;
+	return v_io_add(c->event, V_IO_READ, handle_events);
 }
 
 int
-v_connection_read_until(v_connection_t *s, char *delimeter, v_ssize_t size, v_ssize_t max, v_method_t *callback)
+v_connection_read_until(v_connection_t *c, char *delimeter, v_ssize_t size, v_ssize_t max, v_method_t *callback)
 {
 	v_string_t      *data;
 	int             res;
 
-	res = v_stream_read_until(s->buf, &data, delimeter, size, max);
+	if (max == -1) {
+		max = V_SSIZE_T_MAX;
+	}
+	res = v_stream_read_until(c->buf, &data, delimeter, size, max);
 	if (res == V_OK) {
 		return v_method_call(callback, 1, data);
 	} else if (res == V_AGAIN) {
-		s->read_callback = callback;
-		return v_io_add(s->event, V_IO_READ, handle_events);
+		c->read_callback = callback;
+		c->read_delimeter.data = delimeter;
+		c->read_delimeter.len = size;
+		c->read_until_max = max;
+		return v_io_add(c->event, V_IO_READ, handle_events);
 	} 
 	/* V_ERR */
-	v_close_connection(s);
+	v_close_connection(c);
 	return V_ERR;
+}
+
+int
+v_connection_write(v_connection_t *c, char *str, v_ssize_t size)
+{
+	c->write_bytes.data = str;
+	c->write_bytes.len = size;
+	return v_io_add(c->event, V_IO_WRITE, handle_events);
 }
 
 /**
@@ -277,6 +336,7 @@ v_connection_idle(v_connection_t *c)
 	c->local_addr = NULL;
 	c->remote_addr = NULL;
 	c->event->type = V_IO_NONE;
+	c->status = V_CONNECTION_NONE;
 }
 
 void

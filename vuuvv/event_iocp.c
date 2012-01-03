@@ -398,8 +398,8 @@ v_io_write(v_io_event_t *ev)
 
 	c = ev->data;
 	v_memzero(&ev->ovlp, sizeof(ev->ovlp));
-	wbuf.buf = c->write_bytes->data;
-	wbuf.len = c->write_bytes->len;
+	wbuf.buf = c->write_bytes.data;
+	wbuf.len = c->write_bytes.len;
 
 	res = WSASend(ev->fd, &wbuf, 1, &n, 0, (LPOVERLAPPED)&ev->ovlp, NULL);
 

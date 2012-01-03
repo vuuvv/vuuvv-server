@@ -17,6 +17,7 @@ extern void v_stream_reset(v_stream_t *stream);
 extern int v_stream_write(v_stream_t *stream, const char *bytes, v_ssize_t len);
 extern v_string_t *v_stream_read(v_stream_t *stream, v_ssize_t size);
 extern int v_stream_read_until(v_stream_t *stream, v_string_t **str, char *delimeter, v_ssize_t size, v_ssize_t max);
+extern int v_stream_recv_from_socket(v_stream_t *stream, v_socket_t);
 
 v_inline(int)
 v_stream_length(v_stream_t *stream)
